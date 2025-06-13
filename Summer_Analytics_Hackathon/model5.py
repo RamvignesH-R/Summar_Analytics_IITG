@@ -10,11 +10,9 @@ from scipy.stats import linregress, skew, kurtosis
 from scipy.signal import savgol_filter
 from scipy.fft import fft
 
-# Step 1: Load the data
 train_df = pd.read_csv('./hacktrain.csv')
 test_df = pd.read_csv('./hacktest.csv')
 
-# Step 2: Advanced Preprocessing
 ndvi_cols = [col for col in train_df.columns if col.endswith('_N')]
 train_df[ndvi_cols] = train_df[ndvi_cols].replace(r'^\s*$', np.nan, regex=True)
 for col in ndvi_cols:
@@ -40,7 +38,6 @@ for i in range(ndvi_array_test.shape[0]):
     ndvi_array_test[i] = savgol_filter(ndvi_array_test[i], window_length=5, polyorder=2)
 test_df[ndvi_cols] = pd.DataFrame(ndvi_array_test, columns=ndvi_cols)
 
-# Step 3: Advanced Feature Engineering
 train_df['ndvi_mean'] = train_df[ndvi_cols].mean(axis=1)
 train_df['ndvi_median'] = train_df[ndvi_cols].median(axis=1)
 train_df['ndvi_std'] = train_df[ndvi_cols].std(axis=1)
@@ -98,7 +95,6 @@ for i in range(len(ndvi_cols) - 1):
 train_df = pd.concat([train_df, pd.DataFrame(diff_cols_train)], axis=1)
 test_df = pd.concat([test_df, pd.DataFrame(diff_cols_test)], axis=1)
 
-# Add second-order differences
 second_diff_cols_train = {}
 second_diff_cols_test = {}
 for i in range(len(ndvi_cols) - 2):
@@ -140,7 +136,7 @@ test_df['fft_max'] = fft_vals_test.max(axis=1)
 train_df = train_df.copy()
 test_df = test_df.copy()
 
-# Step 4: Prepare features and target
+
 feature_cols = ['ndvi_mean', 'ndvi_median', 'ndvi_std', 'ndvi_min', 'ndvi_max', 'ndvi_range', 'ndvi_skew', 'ndvi_kurtosis',
                 'ndvi_slope', 'ndvi_winter', 'ndvi_spring', 'ndvi_summer', 'ndvi_fall', 'slope_mean_interaction',
                 'ndvi_rolling_max_5', 'ndvi_rolling_min_5', 'ndvi_rate_of_change', 'fft_mean', 'fft_max'] + \
@@ -152,12 +148,11 @@ X_test = pd.DataFrame(test_df[feature_cols].fillna(0), columns=feature_cols)
 le = LabelEncoder()
 y_train = le.fit_transform(train_df['class'])
 
-# Step 5: Standardize features
 scaler = StandardScaler()
 X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train), columns=feature_cols)  # Keep feature names
 X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=feature_cols)
 
-# Step 6: Train Ensemble with XGBoost, LightGBM, and CatBoost
+#Train Ensemble with XGBoost, LightGBM, and CatBoost
 n_splits = 5
 kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 xgb_models = []
@@ -199,15 +194,15 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_scaled)):
     xgb_test_preds += xgb_model.predict_proba(X_test_scaled) / n_splits
     print(f"Fold {fold + 1} XGBoost best iteration: {xgb_model.best_iteration}")
 
-    # LightGBM Model
+    #LightGBM Model
     lgb_model = LGBMClassifier(
         objective='multiclass',
         num_class=len(le.classes_),
         metric='multi_logloss',
         random_state=42,
-        n_estimators=1500,  # Increased
+        n_estimators=1500,  
         max_depth=4,
-        learning_rate=0.02,  # Lowered
+        learning_rate=0.02,  
         subsample=0.7,
         colsample_bytree=0.7,
         reg_alpha=0.5,
@@ -225,15 +220,15 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_scaled)):
     lgb_test_preds += lgb_model.predict_proba(X_test_scaled) / n_splits
     print(f"Fold {fold + 1} LightGBM best iteration: {lgb_model.best_iteration_}")
 
-    # CatBoost Model
+    #CatBoost Model
     cat_model = CatBoostClassifier(
-        iterations=1500,  # Increased
+        iterations=1500,  
         depth=4,
-        learning_rate=0.02,  # Lowered
+        learning_rate=0.02, 
         random_seed=42,
         loss_function='MultiClass',
         eval_metric='MultiClass',
-        early_stopping_rounds=150,  # Adjusted
+        early_stopping_rounds=150,
         verbose=False
     )
     cat_model.fit(
@@ -246,7 +241,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_scaled)):
     cat_test_preds += cat_model.predict_proba(X_test_scaled) / n_splits
     print(f"Fold {fold + 1} CatBoost best iteration: {cat_model.best_iteration_}")
 
-# Step 7: Feature Selection using Feature Importance
+#Feature Selection using Feature Importance
 xgb_importance = np.mean([model.feature_importances_ for model in xgb_models], axis=0)
 lgb_importance = np.mean([model.feature_importances_ for model in lgb_models], axis=0)
 cat_importance = np.mean([model.feature_importances_ for model in cat_models], axis=0)
@@ -259,7 +254,7 @@ print("Top features selected:", top_features)
 X_train_top = X_train_scaled[top_features]
 X_test_top = X_test_scaled[top_features]
 
-# Step 8: Retrain models on top features
+#Retrain models on top features
 xgb_train_preds_top = np.zeros((X_train_top.shape[0], len(le.classes_)))
 lgb_train_preds_top = np.zeros((X_train_top.shape[0], len(le.classes_)))
 cat_train_preds_top = np.zeros((X_train_top.shape[0], len(le.classes_)))
@@ -334,14 +329,14 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_top)):
     cat_train_preds_top[val_idx] = cat_model.predict_proba(X_fold_val)
     cat_test_preds_top += cat_model.predict_proba(X_test_top) / n_splits
 
-# Step 9: Stacking with Meta-Learner
+# Stacking with Meta-Learner
 stacked_train_preds = np.hstack([xgb_train_preds_top, lgb_train_preds_top, cat_train_preds_top])
 stacked_test_preds = np.hstack([xgb_test_preds_top, lgb_test_preds_top, cat_test_preds_top])
 
 meta_learner = LogisticRegression(random_state=42, C=0.5)  # Removed multi_class
 meta_learner.fit(stacked_train_preds, y_train)
 
-# Step 10: Pseudo-Labeling
+#Pseudo-Labeling
 test_probs = meta_learner.predict_proba(stacked_test_preds)
 confident_idx = test_probs.max(axis=1) > 0.95  # Lowered threshold
 pseudo_labels = np.argmax(test_probs[confident_idx], axis=1)
@@ -351,7 +346,7 @@ y_pseudo = pseudo_labels
 X_train_combined = pd.concat([X_train_top, X_pseudo.reset_index(drop=True)], axis=0, ignore_index=True)
 y_train_combined = np.hstack([y_train, y_pseudo])
 
-# Step 11: Retrain models with combined data
+#Retrain models with combined data
 final_xgb_train_preds = np.zeros((X_train_combined.shape[0], len(le.classes_)))
 final_lgb_train_preds = np.zeros((X_train_combined.shape[0], len(le.classes_)))
 final_cat_train_preds = np.zeros((X_train_combined.shape[0], len(le.classes_)))
@@ -424,16 +419,16 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_combined)):
     final_cat_train_preds[val_idx] = cat_model.predict_proba(X_fold_val)
     final_test_preds += 0.3 * cat_model.predict_proba(X_test_top) / n_splits  # Adjusted weight
 
-# Final stacking
+#Final stacking
 final_stacked_train = np.hstack([final_xgb_train_preds, final_lgb_train_preds, final_cat_train_preds])
 meta_learner.fit(final_stacked_train, y_train_combined)
 
-# Step 12: Final Predictions with Label Smoothing
+#Final Predictions with Label Smoothing
 final_test_preds = (final_test_preds + 0.03) / (1 + 0.03 * len(le.classes_))
 predictions = np.argmax(final_test_preds, axis=1)
 predicted_classes = le.inverse_transform(predictions)
 
-# Create submission file
+#submission file
 submission = pd.DataFrame({
     'ID': test_df['ID'],
     'class': predicted_classes

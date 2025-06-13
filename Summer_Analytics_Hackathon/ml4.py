@@ -9,25 +9,22 @@ from scipy.stats import linregress, skew, kurtosis
 from scipy.signal import savgol_filter
 from scipy.fft import fft
 
-# Step 1: Load the data
 train_df = pd.read_csv('./hacktrain.csv')
 test_df = pd.read_csv('./hacktest.csv')
 
-# Step 2: Advanced Preprocessing
-# Define NDVI columns
 ndvi_cols = [col for col in train_df.columns if col.endswith('_N')]
 
-# Replace empty strings and convert to numeric
+#Replace empty strings and convert to numeric
 train_df[ndvi_cols] = train_df[ndvi_cols].replace(r'^\s*$', np.nan, regex=True)
 for col in ndvi_cols:
     train_df[col] = pd.to_numeric(train_df[col], errors='coerce')
 
-# Handle outliers: Cap NDVI values at 1st and 99th percentiles
+#Handle outliers: Cap NDVI values at 1st and 99th percentiles
 for col in ndvi_cols:
     lower, upper = train_df[col].quantile([0.01, 0.99])
     train_df[col] = train_df[col].clip(lower, upper)
 
-# Impute missing values with linear interpolation
+#Impute missing values with linear interpolation
 train_df[ndvi_cols] = train_df[ndvi_cols].interpolate(method='linear', axis=1, limit_direction='both')
 train_df[ndvi_cols] = train_df[ndvi_cols].fillna(0)
 
@@ -37,7 +34,7 @@ for i in range(ndvi_array.shape[0]):
     ndvi_array[i] = savgol_filter(ndvi_array[i], window_length=5, polyorder=2)
 train_df[ndvi_cols] = pd.DataFrame(ndvi_array, columns=ndvi_cols)
 
-# Preprocess test data
+#Preprocess test data
 test_df[ndvi_cols] = test_df[ndvi_cols].replace(r'^\s*$', np.nan, regex=True)
 for col in ndvi_cols:
     test_df[col] = pd.to_numeric(test_df[col], errors='coerce')
@@ -50,8 +47,7 @@ for i in range(ndvi_array_test.shape[0]):
     ndvi_array_test[i] = savgol_filter(ndvi_array_test[i], window_length=5, polyorder=2)
 test_df[ndvi_cols] = pd.DataFrame(ndvi_array_test, columns=ndvi_cols)
 
-# Step 3: Advanced Feature Engineering
-# 3.1 Basic Statistics
+
 train_df['ndvi_mean'] = train_df[ndvi_cols].mean(axis=1)
 train_df['ndvi_median'] = train_df[ndvi_cols].median(axis=1)
 train_df['ndvi_std'] = train_df[ndvi_cols].std(axis=1)
@@ -70,7 +66,7 @@ test_df['ndvi_range'] = test_df['ndvi_max'] - test_df['ndvi_min']
 test_df['ndvi_skew'] = test_df[ndvi_cols].apply(skew, axis=1)
 test_df['ndvi_kurtosis'] = test_df[ndvi_cols].apply(kurtosis, axis=1)
 
-# 3.2 Trend Feature (slope of NDVI over time)
+
 def compute_slope(row):
     x = np.arange(len(ndvi_cols))
     y = row[ndvi_cols].values
@@ -84,7 +80,7 @@ def compute_slope(row):
 train_df['ndvi_slope'] = train_df.apply(compute_slope, axis=1)
 test_df['ndvi_slope'] = test_df.apply(compute_slope, axis=1)
 
-# 3.3 Seasonal Features
+
 season_mapping = {
     '01': 'winter', '02': 'winter', '03': 'spring',
     '04': 'spring', '05': 'spring', '06': 'summer',
@@ -103,7 +99,7 @@ for season, cols in seasonal_ndvi.items():
     train_df[f'ndvi_{season}'] = train_df[cols].mean(axis=1)
     test_df[f'ndvi_{season}'] = test_df[cols].mean(axis=1)
 
-# 3.4 Consecutive NDVI Differences
+#Consecutive NDVI Differences
 diff_cols_train = {}
 diff_cols_test = {}
 for i in range(len(ndvi_cols) - 1):
@@ -112,10 +108,10 @@ for i in range(len(ndvi_cols) - 1):
 train_df = pd.concat([train_df, pd.DataFrame(diff_cols_train)], axis=1)
 test_df = pd.concat([test_df, pd.DataFrame(diff_cols_test)], axis=1)
 
-# 3.5 Lagged Features (shifted NDVI values)
+#Lagged Features (shifted NDVI values)
 lag_cols_train = {}
 lag_cols_test = {}
-for i in range(1, 3):  # Lag 1 and 2
+for i in range(1, 3):  
     for col in ndvi_cols:
         lag_cols_train[f'{col}_lag_{i}'] = train_df[col].shift(i)
         lag_cols_test[f'{col}_lag_{i}'] = test_df[col].shift(i)
@@ -125,21 +121,21 @@ lag_cols = [f'{col}_lag_{i}' for col in ndvi_cols for i in range(1, 3)]
 train_df[lag_cols] = train_df[lag_cols].fillna(0)
 test_df[lag_cols] = test_df[lag_cols].fillna(0)
 
-# 3.6 Interaction Features
+#Interaction Features
 train_df['slope_mean_interaction'] = train_df['ndvi_slope'] * train_df['ndvi_mean']
 test_df['slope_mean_interaction'] = test_df['ndvi_slope'] * test_df['ndvi_mean']
 
-# 3.7 Rolling Statistics (fix axis=1 deprecation)
+#Rolling Statistics (fix axis=1 deprecation)
 train_df['ndvi_rolling_max_5'] = train_df[ndvi_cols].T.rolling(window=5, min_periods=1).max().T.mean(axis=1)
 train_df['ndvi_rolling_min_5'] = train_df[ndvi_cols].T.rolling(window=5, min_periods=1).min().T.mean(axis=1)
 test_df['ndvi_rolling_max_5'] = test_df[ndvi_cols].T.rolling(window=5, min_periods=1).max().T.mean(axis=1)
 test_df['ndvi_rolling_min_5'] = test_df[ndvi_cols].T.rolling(window=5, min_periods=1).min().T.mean(axis=1)
 
-# 3.8 NDVI Rate of Change
+#NDVI Rate of Change
 train_df['ndvi_rate_of_change'] = (train_df[ndvi_cols].iloc[:, -1] - train_df[ndvi_cols].iloc[:, 0]) / len(ndvi_cols)
 test_df['ndvi_rate_of_change'] = (test_df[ndvi_cols].iloc[:, -1] - test_df[ndvi_cols].iloc[:, 0]) / len(ndvi_cols)
 
-# 3.9 Fourier Transform Features
+#Fourier Transform Features
 fft_vals = np.abs(fft(train_df[ndvi_cols].values, axis=1))
 train_df['fft_mean'] = fft_vals.mean(axis=1)
 train_df['fft_max'] = fft_vals.max(axis=1)
@@ -147,11 +143,11 @@ fft_vals_test = np.abs(fft(test_df[ndvi_cols].values, axis=1))
 test_df['fft_mean'] = fft_vals_test.mean(axis=1)
 test_df['fft_max'] = fft_vals_test.max(axis=1)
 
-# Defragment DataFrame
+#Defragment DataFrame
 train_df = train_df.copy()
 test_df = test_df.copy()
 
-# Step 4: Prepare features and target
+#Prepare features and target
 feature_cols = ['ndvi_mean', 'ndvi_median', 'ndvi_std', 'ndvi_min', 'ndvi_max', 'ndvi_range', 'ndvi_skew', 'ndvi_kurtosis',
                 'ndvi_slope', 'ndvi_winter', 'ndvi_spring', 'ndvi_summer', 'ndvi_fall', 'slope_mean_interaction',
                 'ndvi_rolling_max_5', 'ndvi_rolling_min_5', 'ndvi_rate_of_change', 'fft_mean', 'fft_max'] + \
@@ -163,12 +159,12 @@ X_test = test_df[feature_cols].fillna(0)
 le = LabelEncoder()
 y_train = le.fit_transform(train_df['class'])
 
-# Step 5: Standardize features
+#Standardize features
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# Step 6: Train Ensemble of XGBoost and LightGBM with Cross-Validation
+#Train Ensemble of XGBoost and LightGBM with Cross-Validation
 n_splits = 5
 kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 xgb_models = []
@@ -233,21 +229,21 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_scaled)):
     lgb_test_preds += lgb_model.predict_proba(X_test_scaled) / n_splits
     print(f"Fold {fold + 1} LightGBM best iteration: {lgb_model.best_iteration_}")
 
-# Step 7: Stacking with Meta-Learner
-# Combine predictions from XGBoost and LightGBM for training a meta-learner
+#Stacking with Meta-Learner
+#Combine predictions from XGBoost and LightGBM for training a meta-learner
 stacked_train_preds = np.hstack([xgb_train_preds, lgb_train_preds])
 stacked_test_preds = np.hstack([xgb_test_preds, lgb_test_preds])
 
-# Train a simple Logistic Regression as the meta-learner
+#Train a simple Logistic Regression as the meta-learner
 meta_learner = LogisticRegression(multi_class='multinomial', random_state=42)
 meta_learner.fit(stacked_train_preds, y_train)
 
-# Final predictions using the meta-learner
+#Final predictions using the meta-learner
 final_test_preds = meta_learner.predict_proba(stacked_test_preds)
 predictions = np.argmax(final_test_preds, axis=1)
 predicted_classes = le.inverse_transform(predictions)
 
-# Create submission file
+#submission file
 submission = pd.DataFrame({
     'ID': test_df['ID'],
     'class': predicted_classes
